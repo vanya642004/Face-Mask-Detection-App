@@ -1,4 +1,5 @@
 streamlit
 tflite-runtime
 numpy
-pillow
+opencv-python
+gdown
