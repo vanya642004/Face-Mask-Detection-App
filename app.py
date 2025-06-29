@@ -1,38 +1,54 @@
 import streamlit as st
 import numpy as np
-from PIL import Image
+import cv2
 import tflite_runtime.interpreter as tflite
+import os
+import gdown
 
-st.title("😷 Face Mask Detection with TFLite")
-st.write("Upload an image and I’ll tell you if the person is wearing a mask.")
+st.title("😷 Real-Time Face Mask Detection")
 
-# === Load the .tflite model ===
+# === Google Drive ID of TFLite model ===
+TFLITE_MODEL_ID = "1YnIqoBHN1t_pI1Ln9bbksZEg6w7GV_sL"  # replace if needed
+
+# === Download model.tflite if not present ===
+if not os.path.exists("model.tflite"):
+    gdown.download(f"https://drive.google.com/uc?id={TFLITE_MODEL_ID}", "model.tflite", quiet=False)
+
+# === Load TFLite model ===
 interpreter = tflite.Interpreter(model_path="model.tflite")
 interpreter.allocate_tensors()
-
-# Get input and output tensors.
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 
-# === Upload Image ===
-uploaded_file = st.file_uploader("Upload a face image", type=["jpg", "jpeg", "png"])
+# === Start webcam stream ===
+run = st.checkbox('Start Camera')
+FRAME_WINDOW = st.image([])
 
-if uploaded_file is not None:
-    image = Image.open(uploaded_file).convert('RGB')
-    st.image(image, caption="Uploaded Image", use_column_width=True)
+camera = cv2.VideoCapture(0)
 
-    # Preprocess
-    img = image.resize((150, 150))
+while run:
+    success, frame = camera.read()
+    if not success:
+        st.warning("Could not access webcam.")
+        break
+
+    # Preprocess frame
+    img = cv2.resize(frame, (150, 150))
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img_array = np.array(img).astype(np.float32) / 255.0
     img_array = np.expand_dims(img_array, axis=0)
 
-    # Inference
+    # Run prediction
     interpreter.set_tensor(input_details[0]['index'], img_array)
     interpreter.invoke()
-    output_data = interpreter.get_tensor(output_details[0]['index'])
-    prediction = output_data[0][0]
-
-    # Result
+    prediction = interpreter.get_tensor(output_details[0]['index'])[0][0]
     label = "😷 MASK" if prediction < 0.5 else "❌ NO MASK"
-    st.subheader(f"Prediction: {label}")
-    st.progress(int((1 - prediction) * 100) if label == "😷 MASK" else int(prediction * 100))
+    color = (0, 255, 0) if label == "😷 MASK" else (255, 0, 0)
+
+    # Overlay result
+    cv2.putText(frame, label, (30, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    FRAME_WINDOW.image(frame)
+
+camera.release()
